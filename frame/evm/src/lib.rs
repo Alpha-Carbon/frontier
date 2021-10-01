@@ -471,6 +471,19 @@ where
 	}
 }
 
+/// Allow the origin to be any account.
+pub struct EnsureAddressAny<AccountId>(sp_std::marker::PhantomData<AccountId>);
+
+impl<OuterOrigin, AccountId> EnsureAddressOrigin<OuterOrigin> for EnsureAddressAny<AccountId>
+where
+	OuterOrigin: Into<Result<RawOrigin<AccountId>, OuterOrigin>> + From<RawOrigin<AccountId>>,
+{
+	type Success = ();
+
+	fn try_address_origin(_address: &H160, _origin: OuterOrigin) -> Result<(), OuterOrigin> {
+		Ok(())
+	}
+}
 /// Ensure that the origin never happens.
 pub struct EnsureAddressNever<AccountId>(sp_std::marker::PhantomData<AccountId>);
 
