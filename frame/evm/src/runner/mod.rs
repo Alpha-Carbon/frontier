@@ -62,4 +62,15 @@ pub trait Runner<T: Config> {
 		access_list: Vec<(H160, Vec<H256>)>,
 		config: &evm::Config,
 	) -> Result<CreateInfo, Self::Error>;
+
+	fn precompile_call(
+		source: H160,
+		target: H160,
+		input: Vec<u8>,
+		value: U256,
+		gas_limit: u64,
+		gas_price: U256,
+		nonce: U256,
+		config: &evm::Config,
+	) -> Result<CallInfo, Self::Error>;
 }

@@ -201,6 +201,85 @@ impl<T: Config> Runner<T> {
 			logs: state.substate.logs,
 		})
 	}
+
+	pub fn precompile_execute<'config, F, R>(
+		source: H160,
+		value: U256,
+		gas_limit: u64,
+		gas_price: U256,
+		nonce: U256,
+		config: &'config evm::Config,
+		f: F,
+	) -> Result<ExecutionInfo<R>, Error<T>>
+	where
+		F: FnOnce(
+			&mut StackExecutor<'config, SubstrateStackState<'_, 'config, T>>,
+		) -> (ExitReason, R),
+	{
+		ensure!(
+			gas_price >= T::FeeCalculator::min_gas_price(),
+			Error::<T>::GasPriceTooLow
+		);
+
+		let vicinity = Vicinity {
+			gas_price,
+			origin: source,
+		};
+
+		let metadata = StackSubstateMetadata::new(gas_limit, &config);
+		let state = SubstrateStackState::new(&vicinity, metadata);
+		let mut executor =
+			StackExecutor::new_with_precompile(state, config, T::Precompiles::execute);
+
+		let total_fee = gas_price
+			.checked_mul(U256::from(gas_limit))
+			.ok_or(Error::<T>::FeeOverflow)?;
+		//#NOTE we can check this outter layer
+		let total_payment = value
+			.checked_add(total_fee)
+			.ok_or(Error::<T>::PaymentOverflow)?;
+		let source_account = Pallet::<T>::account_basic(&source);
+		ensure!(
+			source_account.balance >= total_payment,
+			Error::<T>::BalanceLow
+		);
+
+		//#QUESTION maybe check at outter scope
+		ensure!(source_account.nonce == nonce, Error::<T>::InvalidNonce);
+
+		// Execute the EVM call.
+		let (reason, retv) = f(&mut executor);
+
+		let used_gas = U256::from(executor.used_gas());
+		let actual_fee = executor.fee(gas_price);
+		log::debug!(
+			target: "evm",
+			"Execution {:?} [source: {:?}, value: {}, gas_limit: {}, actual_fee: {}]",
+			reason,
+			source,
+			value,
+			gas_limit,
+			actual_fee
+		);
+
+		let state = executor.into_state();
+
+		for address in state.substate.deletes {
+			log::debug!(
+				target: "evm",
+				"Deleting account at {:?}",
+				address
+			);
+			Pallet::<T>::remove_account(&address)
+		}
+
+		Ok(ExecutionInfo {
+			value: retv,
+			exit_reason: reason,
+			used_gas,
+			logs: state.substate.logs,
+		})
+	}
 }
 
 impl<T: Config> RunnerT<T> for Runner<T> {
@@ -297,6 +376,27 @@ impl<T: Config> RunnerT<T> for Runner<T> {
 					address,
 				)
 			},
+		)
+	}
+
+	fn precompile_call(
+		source: H160,
+		target: H160,
+		input: Vec<u8>,
+		value: U256,
+		gas_limit: u64,
+		gas_price: U256,
+		nonce: U256,
+		config: &evm::Config,
+	) -> Result<CallInfo, Self::Error> {
+		Self::precompile_execute(
+			source,
+			value,
+			gas_limit,
+			gas_price,
+			nonce,
+			config,
+			|executor| executor.transact_call(source, target, value, input, gas_limit),
 		)
 	}
 }
