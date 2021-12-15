@@ -662,6 +662,98 @@ impl<T: Config> Pallet<T> {
 		}
 	}
 
+	pub fn do_transact_unchecked(
+		source: H160,
+		transaction: Transaction,
+	) -> DispatchResultWithPostInfo {
+		ensure!(
+			fp_consensus::find_pre_log(&frame_system::Pallet::<T>::digest()).is_err(),
+			Error::<T>::PreLogExists,
+		);
+
+		let transaction_hash =
+			H256::from_slice(Keccak256::digest(&rlp::encode(&transaction)).as_slice());
+		let transaction_index = Pending::<T>::get().len() as u32;
+
+		let (to, contract_address, info) = Self::execute(
+			source,
+			transaction.input.clone(),
+			transaction.value,
+			transaction.gas_limit,
+			Some(transaction.gas_price),
+			Some(transaction.nonce),
+			transaction.action,
+			None,
+		)?;
+
+		let (reason, status, used_gas, dest) = match info {
+			CallOrCreateInfo::Call(info) => (
+				info.exit_reason,
+				TransactionStatus {
+					transaction_hash,
+					transaction_index,
+					from: source,
+					to,
+					contract_address: None,
+					logs: info.logs.clone(),
+					logs_bloom: {
+						let mut bloom: Bloom = Bloom::default();
+						Self::logs_bloom(info.logs, &mut bloom);
+						bloom
+					},
+				},
+				info.used_gas,
+				to,
+			),
+			CallOrCreateInfo::Create(info) => (
+				info.exit_reason,
+				TransactionStatus {
+					transaction_hash,
+					transaction_index,
+					from: source,
+					to,
+					contract_address: Some(info.value),
+					logs: info.logs.clone(),
+					logs_bloom: {
+						let mut bloom: Bloom = Bloom::default();
+						Self::logs_bloom(info.logs, &mut bloom);
+						bloom
+					},
+				},
+				info.used_gas,
+				Some(info.value),
+			),
+		};
+
+		let receipt = ethereum::Receipt {
+			state_root: match reason {
+				ExitReason::Succeed(_) => H256::from_low_u64_be(1),
+				ExitReason::Error(_) => H256::from_low_u64_le(0),
+				ExitReason::Revert(_) => H256::from_low_u64_le(0),
+				ExitReason::Fatal(_) => H256::from_low_u64_le(0),
+			},
+			used_gas,
+			logs_bloom: status.clone().logs_bloom,
+			logs: status.clone().logs,
+		};
+
+		Pending::<T>::append((transaction, status, receipt));
+
+		Self::deposit_event(Event::Executed(
+			source,
+			dest.unwrap_or_default(),
+			transaction_hash,
+			reason,
+		));
+		Ok(PostDispatchInfo {
+			actual_weight: Some(T::GasWeightMapping::gas_to_weight(
+				used_gas.unique_saturated_into(),
+			)),
+			pays_fee: Pays::No,
+		})
+		.into()
+	}
+
 	/// Get the transaction status with given index.
 	pub fn current_transaction_statuses() -> Option<Vec<TransactionStatus>> {
 		CurrentTransactionStatuses::<T>::get()
