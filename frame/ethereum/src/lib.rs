@@ -666,7 +666,7 @@ impl<T: Config> Pallet<T> {
 		source: H160,
 		transaction: Transaction,
 	) -> DispatchResultWithPostInfo {
-		ensure!(
+		frame_support::ensure!(
 			fp_consensus::find_pre_log(&frame_system::Pallet::<T>::digest()).is_err(),
 			Error::<T>::PreLogExists,
 		);
