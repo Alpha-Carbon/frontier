@@ -71,6 +71,7 @@ pub trait Runner<T: Config> {
 		gas_limit: u64,
 		gas_price: U256,
 		nonce: U256,
+		access_list: Vec<(H160, Vec<H256>)>,
 		config: &evm::Config,
 	) -> Result<CallInfo, Self::Error>;
 }
