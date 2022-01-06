@@ -202,18 +202,24 @@ impl<T: Config> Runner<T> {
 		})
 	}
 
-	pub fn precompile_execute<'config, F, R>(
+	pub fn precompile_execute<'config, 'precompiles, F, R>(
 		source: H160,
 		value: U256,
 		gas_limit: u64,
 		gas_price: U256,
 		nonce: U256,
 		config: &'config evm::Config,
+		precompiles: &'precompiles T::PrecompilesType,
 		f: F,
 	) -> Result<ExecutionInfo<R>, Error<T>>
 	where
 		F: FnOnce(
-			&mut StackExecutor<'config, SubstrateStackState<'_, 'config, T>>,
+			&mut StackExecutor<
+				'config,
+				'precompiles,
+				SubstrateStackState<'_, 'config, T>,
+				T::PrecompilesType,
+			>,
 		) -> (ExitReason, R),
 	{
 		ensure!(
@@ -228,8 +234,7 @@ impl<T: Config> Runner<T> {
 
 		let metadata = StackSubstateMetadata::new(gas_limit, &config);
 		let state = SubstrateStackState::new(&vicinity, metadata);
-		let mut executor =
-			StackExecutor::new_with_precompile(state, config, T::Precompiles::execute);
+		let mut executor = StackExecutor::new_with_precompiles(state, config, precompiles);
 
 		let total_fee = gas_price
 			.checked_mul(U256::from(gas_limit))
@@ -387,8 +392,10 @@ impl<T: Config> RunnerT<T> for Runner<T> {
 		gas_limit: u64,
 		gas_price: U256,
 		nonce: U256,
+		access_list: Vec<(H160, Vec<H256>)>,
 		config: &evm::Config,
 	) -> Result<CallInfo, Self::Error> {
+		let precompiles = T::PrecompilesValue::get();
 		Self::precompile_execute(
 			source,
 			value,
@@ -396,7 +403,8 @@ impl<T: Config> RunnerT<T> for Runner<T> {
 			gas_price,
 			nonce,
 			config,
-			|executor| executor.transact_call(source, target, value, input, gas_limit),
+			&precompiles,
+			|executor| executor.transact_call(source, target, value, input, gas_limit, access_list),
 		)
 	}
 }
