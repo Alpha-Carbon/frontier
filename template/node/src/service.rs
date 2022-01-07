@@ -173,7 +173,9 @@ pub fn new_partial(
 	let client = Arc::new(client);
 
 	let telemetry = telemetry.map(|(worker, telemetry)| {
-		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
+		task_manager
+			.spawn_handle()
+			.spawn("telemetry", None, worker.run());
 		telemetry
 	});
 
@@ -453,6 +455,7 @@ pub fn new_full(mut config: Configuration, cli: &Cli) -> Result<TaskManager, Ser
 	// Spawn Frontier FeeHistory cache maintenance task.
 	task_manager.spawn_essential_handle().spawn(
 		"frontier-fee-history",
+		Some("frontier"),
 		EthTask::fee_history_task(
 			Arc::clone(&client),
 			Arc::clone(&overrides),
@@ -505,9 +508,11 @@ pub fn new_full(mut config: Configuration, cli: &Cli) -> Result<TaskManager, Ser
 							},
 						});
 					// we spawn the future on a background thread managed by service.
-					task_manager
-						.spawn_essential_handle()
-						.spawn_blocking("manual-seal", Some("block-authoring"), authorship_future);
+					task_manager.spawn_essential_handle().spawn_blocking(
+						"manual-seal",
+						Some("block-authoring"),
+						authorship_future,
+					);
 				}
 				Sealing::Instant => {
 					let authorship_future =
@@ -529,9 +534,11 @@ pub fn new_full(mut config: Configuration, cli: &Cli) -> Result<TaskManager, Ser
 							},
 						});
 					// we spawn the future on a background thread managed by service.
-					task_manager
-						.spawn_essential_handle()
-						.spawn_blocking("instant-seal", Some("block-authoring"), authorship_future);
+					task_manager.spawn_essential_handle().spawn_blocking(
+						"instant-seal",
+						Some("block-authoring"),
+						authorship_future,
+					);
 				}
 			};
 		}
@@ -593,9 +600,11 @@ pub fn new_full(mut config: Configuration, cli: &Cli) -> Result<TaskManager, Ser
 
 			// the AURA authoring task is considered essential, i.e. if it
 			// fails we take down the service with it.
-			task_manager
-				.spawn_essential_handle()
-				.spawn_blocking("aura", Some("block-authoring"), aura);
+			task_manager.spawn_essential_handle().spawn_blocking(
+				"aura",
+				Some("block-authoring"),
+				aura,
+			);
 		}
 
 		// if the node isn't actively participating in consensus then it doesn't
