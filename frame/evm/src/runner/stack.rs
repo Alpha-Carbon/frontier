@@ -201,6 +201,149 @@ impl<T: Config> Runner<T> {
 			logs: state.substate.logs,
 		})
 	}
+
+	/// Execute an EVM operation.
+	pub fn precompile_execute<'config, 'precompiles, F, R>(
+		source: H160,
+		value: U256,
+		gas_limit: u64,
+		max_fee_per_gas: Option<U256>,
+		max_priority_fee_per_gas: Option<U256>,
+		nonce: Option<U256>,
+		config: &'config evm::Config,
+		precompiles: &'precompiles T::PrecompilesType,
+		f: F,
+	) -> Result<ExecutionInfo<R>, Error<T>>
+	where
+		F: FnOnce(
+			&mut StackExecutor<
+				'config,
+				'precompiles,
+				SubstrateStackState<'_, 'config, T>,
+				T::PrecompilesType,
+			>,
+		) -> (ExitReason, R),
+	{
+		let base_fee = T::FeeCalculator::min_gas_price();
+		// Gas price check is skipped when performing a gas estimation.
+		let max_fee_per_gas = match max_fee_per_gas {
+			Some(max_fee_per_gas) => {
+				ensure!(max_fee_per_gas >= base_fee, Error::<T>::GasPriceTooLow);
+				max_fee_per_gas
+			}
+			None => Default::default(),
+		};
+
+		let vicinity = Vicinity {
+			gas_price: max_fee_per_gas,
+			origin: source,
+		};
+
+		let metadata = StackSubstateMetadata::new(gas_limit, &config);
+		let state = SubstrateStackState::new(&vicinity, metadata);
+		let mut executor = StackExecutor::new_with_precompiles(state, config, precompiles);
+
+		// After eip-1559 we make sure the account can pay both the evm execution and priority fees.
+		let max_base_fee = max_fee_per_gas
+			.checked_mul(U256::from(gas_limit))
+			.ok_or(Error::<T>::FeeOverflow)?;
+		let max_priority_fee = if let Some(max_priority_fee) = max_priority_fee_per_gas {
+			max_priority_fee
+				.checked_mul(U256::from(gas_limit))
+				.ok_or(Error::<T>::FeeOverflow)?
+		} else {
+			U256::zero()
+		};
+
+		let total_fee = max_base_fee
+			.checked_add(max_priority_fee)
+			.ok_or(Error::<T>::FeeOverflow)?;
+
+		let total_payment = value
+			.checked_add(total_fee)
+			.ok_or(Error::<T>::PaymentOverflow)?;
+		let source_account = Pallet::<T>::account_basic(&source);
+		ensure!(
+			source_account.balance >= total_payment,
+			Error::<T>::BalanceLow
+		);
+
+		if let Some(nonce) = nonce {
+			ensure!(source_account.nonce == nonce, Error::<T>::InvalidNonce);
+		}
+		// Deduct fee from the `source` account.
+		let fee = T::OnChargeTransaction::withdraw_fee(&source, total_fee)?;
+
+		// Execute the EVM call.
+		let (reason, retv) = f(&mut executor);
+
+		let used_gas = U256::from(executor.used_gas());
+		let (actual_fee, actual_priority_fee) =
+			if let Some(max_priority_fee) = max_priority_fee_per_gas {
+				let actual_priority_fee = max_priority_fee
+					.checked_mul(U256::from(used_gas))
+					.ok_or(Error::<T>::FeeOverflow)?;
+				let actual_fee = executor
+					.fee(base_fee)
+					.checked_add(actual_priority_fee)
+					.unwrap_or(U256::max_value());
+				(actual_fee, Some(actual_priority_fee))
+			} else {
+				(executor.fee(base_fee), None)
+			};
+		log::debug!(
+			target: "evm",
+			"Execution {:?} [source: {:?}, value: {}, gas_limit: {}, actual_fee: {}]",
+			reason,
+			source,
+			value,
+			gas_limit,
+			actual_fee
+		);
+		// The difference between initially withdrawn and the actual cost is refunded.
+		//
+		// Considered the following request:
+		// +-----------+---------+--------------+
+		// | Gas_limit | Max_Fee | Max_Priority |
+		// +-----------+---------+--------------+
+		// |        20 |      10 |            6 |
+		// +-----------+---------+--------------+
+		//
+		// And execution:
+		// +----------+----------+
+		// | Gas_used | Base_Fee |
+		// +----------+----------+
+		// |        5 |        2 |
+		// +----------+----------+
+		//
+		// Initially withdrawn (10 + 6) * 20 = 320.
+		// Actual cost (2 + 6) * 5 = 40.
+		// Refunded 320 - 40 = 280.
+		// Tip 5 * 6 = 30.
+		// Burned 320 - (280 + 30) = 10. Which is equivalent to gas_used * base_fee.
+		T::OnChargeTransaction::correct_and_deposit_fee(&source, actual_fee, fee);
+		if let Some(actual_priority_fee) = actual_priority_fee {
+			T::OnChargeTransaction::pay_priority_fee(actual_priority_fee);
+		}
+
+		let state = executor.into_state();
+
+		for address in state.substate.deletes {
+			log::debug!(
+				target: "evm",
+				"Deleting account at {:?}",
+				address
+			);
+			Pallet::<T>::remove_account(&address)
+		}
+
+		Ok(ExecutionInfo {
+			value: retv,
+			exit_reason: reason,
+			used_gas,
+			logs: state.substate.logs,
+		})
+	}
 }
 
 impl<T: Config> RunnerT<T> for Runner<T> {
@@ -297,6 +440,32 @@ impl<T: Config> RunnerT<T> for Runner<T> {
 					address,
 				)
 			},
+		)
+	}
+
+	fn precompile_call(
+		source: H160,
+		target: H160,
+		input: Vec<u8>,
+		value: U256,
+		gas_limit: u64,
+		max_fee_per_gas: Option<U256>,
+		max_priority_fee_per_gas: Option<U256>,
+		nonce: Option<U256>,
+		access_list: Vec<(H160, Vec<H256>)>,
+		config: &evm::Config,
+	) -> Result<CallInfo, Self::Error> {
+		let precompiles = T::PrecompilesValue::get();
+		Self::precompile_execute(
+			source,
+			value,
+			gas_limit,
+			max_fee_per_gas,
+			max_priority_fee_per_gas,
+			nonce,
+			config,
+			&precompiles,
+			|executor| executor.transact_call(source, target, value, input, gas_limit, access_list),
 		)
 	}
 }
