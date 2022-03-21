@@ -596,7 +596,7 @@ impl<T: Config> Pallet<T> {
 		builder.build()
 	}
 
-	fn apply_validated_transaction(source: H160, transaction: Transaction) -> PostDispatchInfo {
+	pub fn apply_validated_transaction(source: H160, transaction: Transaction) -> PostDispatchInfo {
 		let pending = Pending::<T>::get();
 		let transaction_hash = transaction.hash();
 		let transaction_index = pending.len() as u32;
