@@ -556,9 +556,11 @@ impl<T: Config> Pallet<T> {
 			.into());
 		}
 		let total_payment = transaction_data.value.saturating_add(fee);
-		if account_data.balance < total_payment {
-			return Err(InvalidTransaction::Payment.into());
-		}
+
+		// Todo: if ACT not enough, check account balance of USDT
+		// if account_data.balance < total_payment {
+		// 	return Err(InvalidTransaction::Payment.into());
+		// }
 
 		Ok((account_data.nonce, priority))
 	}
