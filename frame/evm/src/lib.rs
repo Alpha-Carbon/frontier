@@ -699,13 +699,27 @@ where
 
 	fn withdraw_fee(who: &H160, fee: U256) -> Result<Self::LiquidityInfo, Error<T>> {
 		let account_id = T::AddressMapping::into_account_id(*who);
-		let imbalance = C::withdraw(
-			&account_id,
-			fee.low_u128().unique_saturated_into(),
-			WithdrawReasons::FEE,
-			ExistenceRequirement::AllowDeath,
-		)
-		.map_err(|_| Error::<T>::BalanceLow)?;
+		//#TODO check condition and withdraw fee with support token
+		let support_token = true;
+		let imbalance = if support_token {
+			C::withdraw(
+				&account_id,
+				U256::zero().low_u128().unique_saturated_into(),
+				WithdrawReasons::FEE,
+				ExistenceRequirement::AllowDeath,
+			)
+			.map_err(|_| Error::<T>::BalanceLow)?
+		} else {
+			// pay with native currency
+			C::withdraw(
+				&account_id,
+				fee.low_u128().unique_saturated_into(),
+				WithdrawReasons::FEE,
+				ExistenceRequirement::AllowDeath,
+			)
+			.map_err(|_| Error::<T>::BalanceLow)?
+		};
+
 		Ok(Some(imbalance))
 	}
 

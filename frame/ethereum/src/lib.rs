@@ -47,6 +47,9 @@ use sp_runtime::{
 };
 use sp_std::{marker::PhantomData, prelude::*};
 
+pub mod traits;
+use traits::GasPayment;
+
 pub use ethereum::{
 	AccessListItem, BlockV2 as Block, LegacyTransactionMessage, Log, ReceiptV3 as Receipt,
 	TransactionAction, TransactionV0 as LegacyTransaction, TransactionV2 as Transaction,
@@ -176,6 +179,8 @@ pub mod pallet {
 		type Event: From<Event> + IsType<<Self as frame_system::Config>::Event>;
 		/// How Ethereum state root is calculated.
 		type StateRoot: Get<H256>;
+		/// Calculate which token to pay the gas fee
+		type GasGetter: GasPayment;
 	}
 
 	#[pallet::pallet]
@@ -556,12 +561,16 @@ impl<T: Config> Pallet<T> {
 			.into());
 		}
 		let total_payment = transaction_data.value.saturating_add(fee);
+		// check if account has support token and amount to pay the gas fee.
+		// `check_support_token` return a boolean
+		let support_token = T::GasGetter::check_support_token();
 
-		// Todo: if ACT not enough, check account balance of USDT
-		// if account_data.balance < total_payment {
-		// 	return Err(InvalidTransaction::Payment.into());
-		// }
-
+		if account_data.balance < total_payment {
+			if !support_token {
+				return Err(InvalidTransaction::Payment.into());
+			}
+			return Ok((account_data.nonce, priority));
+		}
 		Ok((account_data.nonce, priority))
 	}
 
