@@ -31,6 +31,7 @@ use frame_support::{
 	ensure,
 	traits::{Currency, ExistenceRequirement, Get},
 };
+use pallet_support_token::GasPayment;
 use sha3::{Digest, Keccak256};
 use sp_core::{H160, H256, U256};
 use sp_runtime::traits::UniqueSaturatedInto;
@@ -104,11 +105,13 @@ impl<T: Config> Runner<T> {
 			.ok_or(Error::<T>::PaymentOverflow)?;
 		let source_account = Pallet::<T>::account_basic(&source);
 
-		//#TODO currently this check will make transaction fail
-		ensure!(
-			source_account.balance >= total_payment,
-			Error::<T>::BalanceLow
-		);
+		//#TODO implement `check_support_token` function
+		// check if account has support token and amount to pay the gas fee.
+		// `check_support_token` return a boolean
+		let support_token = T::GasGetter::check_support_token();
+		if source_account.balance < total_payment {
+			ensure!(support_token, Error::<T>::BalanceLow);
+		}
 
 		if let Some(nonce) = nonce {
 			ensure!(source_account.nonce == nonce, Error::<T>::InvalidNonce);

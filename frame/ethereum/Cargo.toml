@@ -31,6 +31,7 @@ fp-storage = { version = "2.0.0", path = "../../primitives/storage", default-fea
 fp-self-contained = { version = "1.0.0-dev", path = "../../primitives/self-contained", default-features = false }
 scale-info = { version = "1.0.0", default-features = false, features = ["derive"] }
 num_enum = { version = "0.5.4", default-features = false }
+pallet-support-token = { path = "../../../amino/pallets/support-token", default-features = false }
 
 [dev-dependencies]
 sp-core = { version = "4.1.0-dev", git = "https://github.com/paritytech/substrate", branch = "polkadot-v0.9.16" }
@@ -52,6 +53,7 @@ std = [
 	"pallet-balances/std",
 	"pallet-timestamp/std",
 	"pallet-evm/std",
+	"pallet-support-token/std",
 	"sp-io/std",
 	"sp-std/std",
 	"fp-evm/std",

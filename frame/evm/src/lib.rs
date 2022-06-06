@@ -81,6 +81,7 @@ use frame_support::{
 	weights::{Pays, PostDispatchInfo, Weight},
 };
 use frame_system::RawOrigin;
+use pallet_support_token::GasPayment;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 use sp_core::{Hasher, H160, H256, U256};
@@ -143,6 +144,9 @@ pub mod pallet {
 
 		/// Find author for the current block.
 		type FindAuthor: FindAuthor<H160>;
+
+		/// Calculate which token to pay the gas fee
+		type GasGetter: GasPayment;
 
 		/// EVM config used in the module.
 		fn config() -> &'static EvmConfig {
@@ -699,25 +703,32 @@ where
 
 	fn withdraw_fee(who: &H160, fee: U256) -> Result<Self::LiquidityInfo, Error<T>> {
 		let account_id = T::AddressMapping::into_account_id(*who);
-		//#TODO check condition and withdraw fee with support token
-		let support_token = true;
-		let imbalance = if support_token {
-			C::withdraw(
-				&account_id,
-				U256::zero().low_u128().unique_saturated_into(),
-				WithdrawReasons::FEE,
-				ExistenceRequirement::AllowDeath,
-			)
-			.map_err(|_| Error::<T>::BalanceLow)?
-		} else {
-			// pay with native currency
-			C::withdraw(
-				&account_id,
-				fee.low_u128().unique_saturated_into(),
-				WithdrawReasons::FEE,
-				ExistenceRequirement::AllowDeath,
-			)
-			.map_err(|_| Error::<T>::BalanceLow)?
+		//#TODO check account support token
+		let support_token = T::GasGetter::check_support_token();
+
+		let native_imbalance = C::withdraw(
+			&account_id,
+			fee.low_u128().unique_saturated_into(),
+			WithdrawReasons::FEE,
+			ExistenceRequirement::AllowDeath,
+		);
+
+		let imbalance = match native_imbalance {
+			Ok(native) => native,
+			Err(_) => {
+				if support_token {
+					//#TODO withdraw account support token for gas fee
+					C::withdraw(
+						&account_id,
+						U256::zero().low_u128().unique_saturated_into(),
+						WithdrawReasons::FEE,
+						ExistenceRequirement::AllowDeath,
+					)
+					.map_err(|_| Error::<T>::BalanceLow)?
+				} else {
+					return Err(Error::<T>::BalanceLow);
+				}
+			}
 		};
 
 		Ok(Some(imbalance))

@@ -3838,6 +3838,7 @@ dependencies = [
  "num_enum",
  "pallet-balances",
  "pallet-evm",
+ "pallet-support-token",
  "pallet-timestamp",
  "parity-scale-codec",
  "rlp",
@@ -3865,6 +3866,7 @@ dependencies = [
  "hex",
  "log",
  "pallet-balances",
+ "pallet-support-token",
  "pallet-timestamp",
  "parity-scale-codec",
  "primitive-types",
@@ -3975,6 +3977,18 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "pallet-support-token"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-core",
+ "sp-std",
 ]
 
 [[package]]
