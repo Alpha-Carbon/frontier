@@ -40,7 +40,7 @@ use frame_support::{
 	weights::{Pays, PostDispatchInfo, Weight},
 };
 use frame_system::pallet_prelude::OriginFor;
-use pallet_evm::{BlockHashMapping, FeeCalculator, GasWeightMapping, Runner};
+use pallet_evm::{AddressMapping, BlockHashMapping, FeeCalculator, GasWeightMapping, Runner};
 use pallet_support_token::GasPayment;
 use sha3::{Digest, Keccak256};
 use sp_runtime::{
@@ -558,7 +558,8 @@ impl<T: Config> Pallet<T> {
 		let total_payment = transaction_data.value.saturating_add(fee);
 		// check if account has support token and amount to pay the gas fee.
 		// `check_support_token` return a boolean
-		let support_token = T::GasGetter::check_support_token();
+		let account_id = T::AddressMapping::into_account_id(origin);
+		let support_token = T::GasGetter::check_support_token(account_id);
 
 		if account_data.balance < total_payment {
 			if !support_token {

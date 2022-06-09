@@ -3772,6 +3772,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-assets"
+version = "4.0.0-dev"
+source = "git+https://github.com/paritytech/substrate?branch=polkadot-v0.9.16#19162e43be45817b44c7d48e50d03f074f60fbf4"
+dependencies = [
+ "frame-benchmarking",
+ "frame-support",
+ "frame-system",
+ "parity-scale-codec",
+ "scale-info",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-balances"
 version = "4.0.0-dev"
 source = "git+https://github.com/paritytech/substrate?branch=polkadot-v0.9.16#19162e43be45817b44c7d48e50d03f074f60fbf4"
@@ -3985,7 +3999,10 @@ version = "0.1.0"
 dependencies = [
  "frame-support",
  "frame-system",
+ "log",
+ "pallet-assets",
  "parity-scale-codec",
+ "precompile-support",
  "scale-info",
  "sp-core",
  "sp-std",
@@ -4323,6 +4340,13 @@ name = "ppv-lite86"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
+
+[[package]]
+name = "precompile-support"
+version = "0.1.0"
+dependencies = [
+ "sp-std",
+]
 
 [[package]]
 name = "primitive-types"

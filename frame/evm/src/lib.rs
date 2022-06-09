@@ -146,7 +146,7 @@ pub mod pallet {
 		type FindAuthor: FindAuthor<H160>;
 
 		/// Calculate which token to pay the gas fee
-		type GasGetter: GasPayment;
+		type GasGetter: GasPayment<Self::AccountId>;
 
 		/// EVM config used in the module.
 		fn config() -> &'static EvmConfig {
@@ -704,7 +704,7 @@ where
 	fn withdraw_fee(who: &H160, fee: U256) -> Result<Self::LiquidityInfo, Error<T>> {
 		let account_id = T::AddressMapping::into_account_id(*who);
 		//#TODO check account support token
-		let support_token = T::GasGetter::check_support_token();
+		let support_token = T::GasGetter::check_support_token(account_id.clone());
 
 		let native_imbalance = C::withdraw(
 			&account_id,

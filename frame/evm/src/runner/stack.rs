@@ -108,7 +108,8 @@ impl<T: Config> Runner<T> {
 		//#TODO implement `check_support_token` function
 		// check if account has support token and amount to pay the gas fee.
 		// `check_support_token` return a boolean
-		let support_token = T::GasGetter::check_support_token();
+		let account_id = T::AddressMapping::into_account_id(source.clone());
+		let support_token = T::GasGetter::check_support_token(account_id);
 		if source_account.balance < total_payment {
 			ensure!(support_token, Error::<T>::BalanceLow);
 		}
