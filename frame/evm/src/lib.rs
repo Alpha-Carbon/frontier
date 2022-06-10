@@ -703,8 +703,7 @@ where
 
 	fn withdraw_fee(who: &H160, fee: U256) -> Result<Self::LiquidityInfo, Error<T>> {
 		let account_id = T::AddressMapping::into_account_id(*who);
-		//#TODO check account support token
-		let support_token = T::GasGetter::check_support_token(account_id.clone());
+		let support_token = T::GasGetter::check_support_token(account_id.clone(), fee);
 
 		let native_imbalance = C::withdraw(
 			&account_id,

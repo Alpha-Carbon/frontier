@@ -105,13 +105,14 @@ impl<T: Config> Runner<T> {
 			.ok_or(Error::<T>::PaymentOverflow)?;
 		let source_account = Pallet::<T>::account_basic(&source);
 
-		//#TODO implement `check_support_token` function
-		// check if account has support token and amount to pay the gas fee.
-		// `check_support_token` return a boolean
 		let account_id = T::AddressMapping::into_account_id(source.clone());
-		let support_token = T::GasGetter::check_support_token(account_id);
+		let support_token = T::GasGetter::check_support_token(account_id, total_fee);
+
 		if source_account.balance < total_payment {
-			ensure!(support_token, Error::<T>::BalanceLow);
+			ensure!(
+				source_account.balance >= value && support_token,
+				Error::<T>::BalanceLow
+			);
 		}
 
 		if let Some(nonce) = nonce {

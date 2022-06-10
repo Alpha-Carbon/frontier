@@ -556,17 +556,17 @@ impl<T: Config> Pallet<T> {
 			.into());
 		}
 		let total_payment = transaction_data.value.saturating_add(fee);
-		// check if account has support token and amount to pay the gas fee.
-		// `check_support_token` return a boolean
+
 		let account_id = T::AddressMapping::into_account_id(origin);
-		let support_token = T::GasGetter::check_support_token(account_id);
+		let support_token = T::GasGetter::check_support_token(account_id, fee);
 
 		if account_data.balance < total_payment {
-			if !support_token {
-				return Err(InvalidTransaction::Payment.into());
+			if support_token && account_data.balance >= transaction_data.value {
+				return Ok((account_data.nonce, priority));
 			}
-			return Ok((account_data.nonce, priority));
+			return Err(InvalidTransaction::Payment.into());
 		}
+
 		Ok((account_data.nonce, priority))
 	}
 
