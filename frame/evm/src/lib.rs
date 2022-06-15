@@ -71,6 +71,7 @@ pub use fp_evm::{
 
 #[cfg(feature = "std")]
 use codec::{Decode, Encode};
+use core::str::FromStr;
 use evm::Config as EvmConfig;
 use frame_support::{
 	dispatch::DispatchResultWithPostInfo,
@@ -81,7 +82,6 @@ use frame_support::{
 	weights::{Pays, PostDispatchInfo, Weight},
 };
 use frame_system::RawOrigin;
-use pallet_support_token::GasPayment;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 use sp_core::{Hasher, H160, H256, U256};
@@ -145,8 +145,8 @@ pub mod pallet {
 		/// Find author for the current block.
 		type FindAuthor: FindAuthor<H160>;
 
-		/// Calculate which token to pay the gas fee
-		type GasGetter: GasPayment<Self::AccountId>;
+		/// Support erc20 Utils, check asset balances, native to token conversion, trasfer fee
+		type GasUtils: SupportErc20Utils<Self::AccountId>;
 
 		/// EVM config used in the module.
 		fn config() -> &'static EvmConfig {
@@ -703,32 +703,13 @@ where
 
 	fn withdraw_fee(who: &H160, fee: U256) -> Result<Self::LiquidityInfo, Error<T>> {
 		let account_id = T::AddressMapping::into_account_id(*who);
-		let support_token = T::GasGetter::check_support_token(account_id.clone(), fee);
-
-		let native_imbalance = C::withdraw(
+		let imbalance = C::withdraw(
 			&account_id,
 			fee.low_u128().unique_saturated_into(),
 			WithdrawReasons::FEE,
 			ExistenceRequirement::AllowDeath,
-		);
-
-		let imbalance = match native_imbalance {
-			Ok(native) => native,
-			Err(_) => {
-				if support_token {
-					//#TODO withdraw account support token for gas fee
-					C::withdraw(
-						&account_id,
-						U256::zero().low_u128().unique_saturated_into(),
-						WithdrawReasons::FEE,
-						ExistenceRequirement::AllowDeath,
-					)
-					.map_err(|_| Error::<T>::BalanceLow)?
-				} else {
-					return Err(Error::<T>::BalanceLow);
-				}
-			}
-		};
+		)
+		.map_err(|_| Error::<T>::BalanceLow)?;
 
 		Ok(Some(imbalance))
 	}
@@ -814,3 +795,32 @@ impl<T> OnChargeEVMTransaction<T> for ()
 		<EVMCurrencyAdapter::<<T as Config>::Currency, ()> as OnChargeEVMTransaction<T>>::pay_priority_fee(tip);
 	}
 }
+
+pub trait SupportErc20Utils<AccountId> {
+	/// check if account has specefic tokens and amount to pay the gas fee
+	/// takes two argument: user accountId and total fee
+	fn check_support_token(_who: AccountId, _total_fee: U256) -> bool {
+		false
+	}
+	/// convert native token to erc20 token through exchange rate
+	fn native_to_token(native: U256) -> Option<U256> {
+		Some(native)
+	}
+	/// transfer the gas fee in erc20 token
+	fn pay_fee_in_token(_from: AccountId, _to: AccountId, _amount: U256) {}
+
+	/// split amount to block author and token owner
+	fn rate(amount: U256, rate1: u64, rate2: u64) -> (U256, U256) {
+		let total = rate1 + rate2;
+		let amount1 = amount.saturating_mul(U256::from(rate1)) / U256::from(total);
+		let amount2 = amount.saturating_sub(amount1);
+		(amount1, amount2)
+	}
+
+	/// get support erc20 token address
+	fn get_support_asset_id() -> H160 {
+		H160::from_str("0xFFFFFFFF8D2ee523a2206206994597C13D831ec7").unwrap()
+	}
+}
+
+impl<T> SupportErc20Utils<T> for () {}

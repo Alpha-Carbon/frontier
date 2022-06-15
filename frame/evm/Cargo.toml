@@ -34,7 +34,6 @@ sha3 = { version = "0.8", default-features = false }
 log = { version = "0.4", default-features = false }
 hex = { version = "0.4", default-features = false }
 scale-info = { version = "1.0.0", default-features = false, features = ["derive"] }
-pallet-support-token = { path = "../../../amino/pallets/support-token", default-features = false }
 
 
 [features]
@@ -47,7 +46,6 @@ std = [
 	"frame-support/std",
 	"frame-system/std",
 	"pallet-balances/std",
-	"pallet-support-token/std",
 	"sp-io/std",
 	"frame-benchmarking/std",
 	"sp-std/std",

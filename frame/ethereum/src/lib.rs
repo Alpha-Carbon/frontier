@@ -40,8 +40,9 @@ use frame_support::{
 	weights::{Pays, PostDispatchInfo, Weight},
 };
 use frame_system::pallet_prelude::OriginFor;
-use pallet_evm::{AddressMapping, BlockHashMapping, FeeCalculator, GasWeightMapping, Runner};
-use pallet_support_token::GasPayment;
+use pallet_evm::{
+	AddressMapping, BlockHashMapping, FeeCalculator, GasWeightMapping, Runner, SupportErc20Utils,
+};
 use sha3::{Digest, Keccak256};
 use sp_runtime::{
 	generic::DigestItem,
@@ -558,10 +559,11 @@ impl<T: Config> Pallet<T> {
 		let total_payment = transaction_data.value.saturating_add(fee);
 
 		let account_id = T::AddressMapping::into_account_id(origin);
-		let support_token = T::GasGetter::check_support_token(account_id, fee);
 
 		if account_data.balance < total_payment {
-			if support_token && account_data.balance >= transaction_data.value {
+			if T::GasUtils::check_support_token(account_id, fee)
+				&& account_data.balance >= transaction_data.value
+			{
 				return Ok((account_data.nonce, priority));
 			}
 			return Err(InvalidTransaction::Payment.into());
