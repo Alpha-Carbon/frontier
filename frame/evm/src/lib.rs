@@ -89,7 +89,7 @@ use sp_runtime::{
 	traits::{BadOrigin, Saturating, UniqueSaturatedInto, Zero},
 	AccountId32,
 };
-use sp_std::vec::Vec;
+use sp_std::{vec, vec::Vec};
 
 pub use pallet::*;
 
@@ -799,17 +799,35 @@ impl<T> OnChargeEVMTransaction<T> for ()
 pub trait SupportErc20Utils<AccountId> {
 	/// check if account has specefic tokens and amount to pay the gas fee
 	/// takes two argument: user accountId and total fee
-	fn check_support_token(_who: AccountId, _total_fee: U256) -> bool {
+	fn check_support_token(who: AccountId, total_fee: U256) -> bool;
+
+	/// convert native token to erc20 token through exchange rate
+	fn native_to_token(native: U256) -> Option<U256>;
+
+	/// transfer the gas fee in erc20 token
+	fn pay_fee_in_token(from: AccountId, to: AccountId, amount: U256);
+
+	/// split amount to block author and token owner
+	fn rate(amount: U256, rate1: u64, rate2: u64) -> (U256, U256);
+
+	/// get support erc20 token address
+	fn get_support_asset_address() -> Vec<H160>;
+
+	/// get recipient address
+	fn get_recipient_address() -> H160;
+}
+
+impl<T> SupportErc20Utils<T> for () {
+	fn check_support_token(_who: T, _total_fee: U256) -> bool {
 		false
 	}
-	/// convert native token to erc20 token through exchange rate
+
 	fn native_to_token(native: U256) -> Option<U256> {
 		Some(native)
 	}
-	/// transfer the gas fee in erc20 token
-	fn pay_fee_in_token(_from: AccountId, _to: AccountId, _amount: U256) {}
 
-	/// split amount to block author and token owner
+	fn pay_fee_in_token(_from: T, _to: T, _amount: U256) {}
+
 	fn rate(amount: U256, rate1: u64, rate2: u64) -> (U256, U256) {
 		let total = rate1 + rate2;
 		let amount1 = amount.saturating_mul(U256::from(rate1)) / U256::from(total);
@@ -817,10 +835,13 @@ pub trait SupportErc20Utils<AccountId> {
 		(amount1, amount2)
 	}
 
-	/// get support erc20 token address
-	fn get_support_asset_id() -> H160 {
-		H160::from_str("0xFFFFFFFF8D2ee523a2206206994597C13D831ec7").unwrap()
+	fn get_support_asset_address() -> Vec<H160> {
+		//#Note currently only support USDT
+		vec![H160::from_str("0xFFFFFFFF8D2ee523a2206206994597C13D831ec7").unwrap()]
+	}
+
+	fn get_recipient_address() -> H160 {
+		//#Note root is set as recipient
+		H160::from_str("f24FF3a9CF04c71Dbc94D0b566f7A27B94566cac").unwrap()
 	}
 }
-
-impl<T> SupportErc20Utils<T> for () {}

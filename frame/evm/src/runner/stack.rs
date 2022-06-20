@@ -32,7 +32,6 @@ use frame_support::{
 	traits::{Currency, ExistenceRequirement, Get},
 };
 
-use core::str::FromStr;
 use sha3::{Digest, Keccak256};
 use sp_core::{H160, H256, U256};
 use sp_runtime::traits::UniqueSaturatedInto;
@@ -147,15 +146,15 @@ impl<T: Config> Runner<T> {
 			//#Hack: already check account asset balance previously, so return value won't be None
 			// convert native currency fee to erc20 token fee
 			let actual_fee = T::GasUtils::native_to_token(actual_fee).unwrap();
-			// for fees, 80% to collator, 20% are to token contract owner
+			// for fees, 80% to collator, 20% are to recipient
 			let (to_collator, to_owner) = T::GasUtils::rate(actual_fee, 80, 20);
-			// transfer actual fee to author and erc20 token contract owner
+			// transfer actual fee to block author and recipient
 			let author_id = T::AddressMapping::into_account_id(<Pallet<T>>::find_author());
-			let token_owner = T::AddressMapping::into_account_id(
-				H160::from_str("f24FF3a9CF04c71Dbc94D0b566f7A27B94566cac").unwrap(),
-			);
+			let recipient =
+				T::AddressMapping::into_account_id(T::GasUtils::get_recipient_address());
+
 			T::GasUtils::pay_fee_in_token(account_id.clone(), author_id.clone(), to_collator);
-			T::GasUtils::pay_fee_in_token(account_id.clone(), token_owner, to_owner);
+			T::GasUtils::pay_fee_in_token(account_id.clone(), recipient, to_owner);
 
 			// transfer actual_priority_fee to author
 			if let Some(actual_priority_fee) = actual_priority_fee {
