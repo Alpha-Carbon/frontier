@@ -19,7 +19,7 @@
 
 use crate::{
 	runner::Runner as RunnerT, AccountCodes, AccountStorages, AddressMapping, BlockHashMapping,
-	Config, Error, Event, FeeCalculator, OnChargeEVMTransaction, Pallet,
+	Config, Error, Event, FeeCalculator, OnChargeEVMTransaction, Pallet, SupportErc20Utils,
 };
 use evm::{
 	backend::Backend as BackendT,
@@ -31,6 +31,7 @@ use frame_support::{
 	ensure,
 	traits::{Currency, ExistenceRequirement, Get},
 };
+
 use sha3::{Digest, Keccak256};
 use sp_core::{H160, H256, U256};
 use sp_runtime::traits::UniqueSaturatedInto;
@@ -103,68 +104,127 @@ impl<T: Config> Runner<T> {
 			.checked_add(total_fee)
 			.ok_or(Error::<T>::PaymentOverflow)?;
 		let source_account = Pallet::<T>::account_basic(&source);
-		ensure!(
-			source_account.balance >= total_payment,
-			Error::<T>::BalanceLow
-		);
+
+		let account_id = T::AddressMapping::into_account_id(source.clone());
+
+		let use_token = if source_account.balance < total_payment {
+			// check user has support erc20 asset balance to pay the gas fee
+			ensure!(
+				source_account.balance >= value
+					&& T::GasUtils::check_support_token(account_id.clone(), total_fee),
+				Error::<T>::BalanceLow
+			);
+			true
+		} else {
+			false
+		};
 
 		if let Some(nonce) = nonce {
 			ensure!(source_account.nonce == nonce, Error::<T>::InvalidNonce);
 		}
-		// Deduct fee from the `source` account.
-		let fee = T::OnChargeTransaction::withdraw_fee(&source, total_fee)?;
 
-		// Execute the EVM call.
-		let (reason, retv) = f(&mut executor);
+		let (reason, retv, used_gas) = if use_token {
+			// fee to token and check
+			// Execute the EVM call.
+			//#Hack: execute before transfer fee, only will know actual fee after execute, we already check account asset balance previously
+			let (reason, retv) = f(&mut executor);
 
-		let used_gas = U256::from(executor.used_gas());
-		let (actual_fee, actual_priority_fee) =
-			if let Some(max_priority_fee) = max_priority_fee_per_gas {
-				let actual_priority_fee = max_priority_fee
-					.checked_mul(U256::from(used_gas))
-					.ok_or(Error::<T>::FeeOverflow)?;
-				let actual_fee = executor
-					.fee(base_fee)
-					.checked_add(actual_priority_fee)
-					.unwrap_or(U256::max_value());
-				(actual_fee, Some(actual_priority_fee))
-			} else {
-				(executor.fee(base_fee), None)
-			};
-		log::debug!(
-			target: "evm",
-			"Execution {:?} [source: {:?}, value: {}, gas_limit: {}, actual_fee: {}]",
-			reason,
-			source,
-			value,
-			gas_limit,
-			actual_fee
-		);
-		// The difference between initially withdrawn and the actual cost is refunded.
-		//
-		// Considered the following request:
-		// +-----------+---------+--------------+
-		// | Gas_limit | Max_Fee | Max_Priority |
-		// +-----------+---------+--------------+
-		// |        20 |      10 |            6 |
-		// +-----------+---------+--------------+
-		//
-		// And execution:
-		// +----------+----------+
-		// | Gas_used | Base_Fee |
-		// +----------+----------+
-		// |        5 |        2 |
-		// +----------+----------+
-		//
-		// Initially withdrawn (10 + 6) * 20 = 320.
-		// Actual cost (2 + 6) * 5 = 40.
-		// Refunded 320 - 40 = 280.
-		// Tip 5 * 6 = 30.
-		// Burned 320 - (280 + 30) = 10. Which is equivalent to gas_used * base_fee.
-		T::OnChargeTransaction::correct_and_deposit_fee(&source, actual_fee, fee);
-		if let Some(actual_priority_fee) = actual_priority_fee {
-			T::OnChargeTransaction::pay_priority_fee(actual_priority_fee);
-		}
+			let used_gas = U256::from(executor.used_gas());
+			let (actual_fee, actual_priority_fee) =
+				if let Some(max_priority_fee) = max_priority_fee_per_gas {
+					let actual_priority_fee = max_priority_fee
+						.checked_mul(U256::from(used_gas))
+						.ok_or(Error::<T>::FeeOverflow)?;
+					let actual_fee = executor
+						.fee(base_fee)
+						.checked_add(actual_priority_fee)
+						.unwrap_or(U256::max_value());
+					(actual_fee, Some(actual_priority_fee))
+				} else {
+					(executor.fee(base_fee), None)
+				};
+			//#Hack: already check account asset balance previously, so return value won't be None
+			// convert native currency fee to erc20 token fee
+			let actual_fee = T::GasUtils::native_to_token(actual_fee).unwrap();
+			// for fees, 80% to collator, 20% are to recipient
+			let (to_collator, to_owner) = T::GasUtils::rate(actual_fee, 80, 20);
+			// transfer actual fee to block author and recipient
+			let author_id = T::AddressMapping::into_account_id(<Pallet<T>>::find_author());
+			let recipient =
+				T::AddressMapping::into_account_id(T::GasUtils::get_recipient_address());
+
+			T::GasUtils::pay_fee_in_token(account_id.clone(), author_id.clone(), to_collator);
+			T::GasUtils::pay_fee_in_token(account_id.clone(), recipient, to_owner);
+
+			// transfer actual_priority_fee to author
+			if let Some(actual_priority_fee) = actual_priority_fee {
+				// convert native currency fee to erc20 token fee
+				let actual_priority_fee =
+					T::GasUtils::native_to_token(actual_priority_fee).unwrap();
+
+				T::GasUtils::pay_fee_in_token(account_id, author_id, actual_priority_fee);
+			}
+
+			(reason, retv, used_gas)
+		} else {
+			// Deduct fee from the `source` account.
+			let fee = T::OnChargeTransaction::withdraw_fee(&source, total_fee)?;
+
+			// Execute the EVM call.
+			let (reason, retv) = f(&mut executor);
+
+			let used_gas = U256::from(executor.used_gas());
+			let (actual_fee, actual_priority_fee) =
+				if let Some(max_priority_fee) = max_priority_fee_per_gas {
+					let actual_priority_fee = max_priority_fee
+						.checked_mul(U256::from(used_gas))
+						.ok_or(Error::<T>::FeeOverflow)?;
+					let actual_fee = executor
+						.fee(base_fee)
+						.checked_add(actual_priority_fee)
+						.unwrap_or(U256::max_value());
+					(actual_fee, Some(actual_priority_fee))
+				} else {
+					(executor.fee(base_fee), None)
+				};
+
+			log::debug!(
+				target: "evm",
+				"Execution {:?} [source: {:?}, value: {}, gas_limit: {}, actual_fee: {}]",
+				reason,
+				source,
+				value,
+				gas_limit,
+				actual_fee
+			);
+			// The difference between initially withdrawn and the actual cost is refunded.
+			//
+			// Considered the following request:
+			// +-----------+---------+--------------+
+			// | Gas_limit | Max_Fee | Max_Priority |
+			// +-----------+---------+--------------+
+			// |        20 |      10 |            6 |
+			// +-----------+---------+--------------+
+			//
+			// And execution:
+			// +----------+----------+
+			// | Gas_used | Base_Fee |
+			// +----------+----------+
+			// |        5 |        2 |
+			// +----------+----------+
+			//
+			// Initially withdrawn (10 + 6) * 20 = 320.
+			// Actual cost (2 + 6) * 5 = 40.
+			// Refunded 320 - 40 = 280.
+			// Tip 5 * 6 = 30.
+			// Burned 320 - (280 + 30) = 10. Which is equivalent to gas_used * base_fee.
+			T::OnChargeTransaction::correct_and_deposit_fee(&source, actual_fee, fee);
+			if let Some(actual_priority_fee) = actual_priority_fee {
+				T::OnChargeTransaction::pay_priority_fee(actual_priority_fee);
+			}
+
+			(reason, retv, used_gas)
+		};
 
 		let state = executor.into_state();
 

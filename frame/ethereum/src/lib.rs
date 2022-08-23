@@ -24,10 +24,15 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use codec::{Decode, Encode};
+pub use ethereum::{
+	AccessListItem, BlockV2 as Block, LegacyTransactionMessage, Log, ReceiptV3 as Receipt,
+	TransactionAction, TransactionV0 as LegacyTransaction, TransactionV2 as Transaction,
+};
 use ethereum_types::{Bloom, BloomInput, H160, H256, H64, U256};
 use evm::ExitReason;
 use fp_consensus::{PostLog, PreLog, FRONTIER_ENGINE_ID};
 use fp_evm::CallOrCreateInfo;
+pub use fp_rpc::TransactionStatus;
 use fp_storage::PALLET_ETHEREUM_SCHEMA;
 use frame_support::{
 	dispatch::DispatchResultWithPostInfo,
@@ -35,7 +40,9 @@ use frame_support::{
 	weights::{Pays, PostDispatchInfo, Weight},
 };
 use frame_system::pallet_prelude::OriginFor;
-use pallet_evm::{BlockHashMapping, FeeCalculator, GasWeightMapping, Runner};
+use pallet_evm::{
+	AddressMapping, BlockHashMapping, FeeCalculator, GasWeightMapping, Runner, SupportErc20Utils,
+};
 use sha3::{Digest, Keccak256};
 use sp_runtime::{
 	generic::DigestItem,
@@ -46,12 +53,6 @@ use sp_runtime::{
 	DispatchError, RuntimeDebug,
 };
 use sp_std::{marker::PhantomData, prelude::*};
-
-pub use ethereum::{
-	AccessListItem, BlockV2 as Block, LegacyTransactionMessage, Log, ReceiptV3 as Receipt,
-	TransactionAction, TransactionV0 as LegacyTransaction, TransactionV2 as Transaction,
-};
-pub use fp_rpc::TransactionStatus;
 
 #[cfg(all(feature = "std", test))]
 mod mock;
@@ -556,7 +557,15 @@ impl<T: Config> Pallet<T> {
 			.into());
 		}
 		let total_payment = transaction_data.value.saturating_add(fee);
+
+		let account_id = T::AddressMapping::into_account_id(origin);
+
 		if account_data.balance < total_payment {
+			if T::GasUtils::check_support_token(account_id, fee)
+				&& account_data.balance >= transaction_data.value
+			{
+				return Ok((account_data.nonce, priority));
+			}
 			return Err(InvalidTransaction::Payment.into());
 		}
 
