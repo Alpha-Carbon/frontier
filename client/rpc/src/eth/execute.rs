@@ -55,7 +55,7 @@ where
 	BE::State: StateBackend<BlakeTwo256>,
 	A: ChainApi<Block = B> + 'static,
 {
-	pub fn call(&self, request: CallRequest, number: Option<BlockNumber>) -> Result<Bytes> {
+	pub fn call(&self, mut request: CallRequest, number: Option<BlockNumber>) -> Result<Bytes> {
 		let CallRequest {
 			from,
 			to,
