@@ -55,7 +55,7 @@ where
 	BE::State: StateBackend<BlakeTwo256>,
 	A: ChainApi<Block = B> + 'static,
 {
-	pub fn call(&self, mut request: CallRequest, number: Option<BlockNumber>) -> Result<Bytes> {
+	pub fn call(&self, request: CallRequest, number: Option<BlockNumber>) -> Result<Bytes> {
 		let CallRequest {
 			from,
 			to,
@@ -280,7 +280,7 @@ where
 		}
 	}
 
-	pub async fn estimate_gas(&self, request: CallRequest, _: Option<BlockNumber>) -> Result<U256> {
+	pub async fn estimate_gas(&self, mut request: CallRequest, _: Option<BlockNumber>) -> Result<U256> {
 		let client = Arc::clone(&self.client);
 		let block_data_cache = Arc::clone(&self.block_data_cache);
 
