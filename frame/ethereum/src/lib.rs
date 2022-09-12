@@ -481,8 +481,7 @@ impl<T: Config> Pallet<T> {
 		.validate_in_pool_for(&who)
 		.and_then(|v| v.with_chain_id())
 		.and_then(|v| v.with_base_fee())
-		//#Hack: we check balance at CustomRunner for alter fee token
-		// .and_then(|v| v.with_balance_for(&who))
+		.and_then(|v| v.with_balance_for(&who))
 		.map_err(|e| e.0)?;
 
 		let priority = match (
@@ -790,8 +789,7 @@ impl<T: Config> Pallet<T> {
 		.validate_in_block_for(&who)
 		.and_then(|v| v.with_chain_id())
 		.and_then(|v| v.with_base_fee())
-		//#Hack: we check balance at CustomRunner for alter fee token
-		// .and_then(|v| v.with_balance_for(&who))
+		.and_then(|v| v.with_balance_for(&who))
 		.map_err(|e| TransactionValidityError::Invalid(e.0))?;
 
 		Ok(())
